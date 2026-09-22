@@ -672,20 +672,26 @@ describe('emit-ts object arguments', () => {
     );
   });
 
-  it.each([
-    { method: 'closed_named', args: "{ query: 'ok', extra: 'invalid' }", code: 2353 },
-    { method: 'closed_composed', args: "{ query: 'ok', extra: 'invalid' }", code: 2353 },
-    { method: 'closed_empty', args: "{ extra: 'invalid' }", code: 2322 },
-  ])('rejects extra keys in $method client types', async ({ method, args, code }) => {
+  it('rejects extra keys in named, composed and empty closed-schema client types', async () => {
     const { clientPath, typesPath } = await emitChromeClient();
     const caller = path.join(path.dirname(clientPath), 'closed-schema-caller.ts');
     await fs.writeFile(
       caller,
-      `import { createChromeClient } from './chrome-client';\nexport async function run() { const client = await createChromeClient(); await client.${method}(${args}); }\n`
+      `import { createChromeClient } from './chrome-client';
+export async function run() {
+  const client = await createChromeClient();
+  await client.closed_named({ query: 'ok', extra: 'invalid' });
+  await client.closed_composed({ query: 'ok', extra: 'invalid' });
+  await client.closed_empty({ extra: 'invalid' });
+}
+`
     );
     const diagnostics = compileUnderRepositoryConfig([clientPath, typesPath, caller]);
-    expect(diagnostics).toHaveLength(1);
-    expect(diagnostics[0]).toMatchObject({ file: 'closed-schema-caller.ts', code });
+    expect(diagnostics.map(({ file, code }) => ({ file, code }))).toEqual([
+      { file: 'closed-schema-caller.ts', code: 2353 },
+      { file: 'closed-schema-caller.ts', code: 2353 },
+      { file: 'closed-schema-caller.ts', code: 2322 },
+    ]);
   });
 
   it('calls a zero-argument tool without an arguments object', async () => {
@@ -891,15 +897,17 @@ function compileUnderRepositoryConfig(rootNames: string[]): EmittedDiagnostic[] 
   const parsed = ts.parseJsonConfigFileContent(configFile.config, ts.sys, REPO_ROOT, undefined, configPath);
   const options: ts.CompilerOptions = { ...parsed.options, noEmit: true };
   const host = ts.createCompilerHost(options);
-  const packageEntry = path.join(REPO_ROOT, 'src', 'index.ts');
+  // pnpm test builds these declarations first; exercise the public package surface once per program.
+  const packageEntry = path.join(REPO_ROOT, 'dist', 'index.d.ts');
+  expect(ts.sys.fileExists(packageEntry), 'Run pnpm build before compiler integration tests').toBe(true);
   host.resolveModuleNameLiterals = (literals, containingFile, _redirected, compilerOptions) =>
     literals.map((literal) =>
       literal.text === 'mcporter'
         ? {
             resolvedModule: {
               resolvedFileName: packageEntry,
-              extension: ts.Extension.Ts,
-              isExternalLibraryImport: false,
+              extension: ts.Extension.Dts,
+              isExternalLibraryImport: true,
             },
           }
         : ts.resolveModuleName(literal.text, containingFile, compilerOptions, host)
