@@ -550,6 +550,33 @@ function received(result: unknown): unknown {
 }
 
 describe('emit-ts object arguments', () => {
+  it('keeps server-controlled header and JSDoc text inside comments', () => {
+    const tools = buildToolMetadataList(
+      [
+        {
+          name: 'safe_tool',
+          description: '*/ } globalThis.docInjected = true; interface Reopened { /*',
+          inputSchema: { type: 'object', properties: {} },
+        },
+      ],
+      { onCollision: 'skip' }
+    );
+    const docs = emitTsTestInternals.buildDocEntries('chrome', tools, false);
+    const clientSource = renderClientModule({
+      interfaceName: 'ChromeTools',
+      docs,
+      metadata: { ...testMetadata, generatorLabel: 'mcporter@test\nglobalThis.headerInjected = true;//' },
+    });
+    const { outputText } = ts.transpileModule(clientSource, {
+      compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+    });
+    const sandbox: Record<string, unknown> = { require: requireMcporterShim, exports: {} };
+    runInNewContext(outputText, sandbox);
+    expect(sandbox.docInjected).toBeUndefined();
+    expect(sandbox.headerInjected).toBeUndefined();
+    expect(parseDiagnosticsOf(clientSource)).toEqual([]);
+  });
+
   it('declares one object parameter per tool with wire names kept verbatim, in the client and its .d.ts', async () => {
     const { clientSource, typesSource } = await emitChromeClient();
 

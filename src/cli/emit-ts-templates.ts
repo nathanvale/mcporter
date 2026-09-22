@@ -102,7 +102,7 @@ function renderInterface(input: EmitTypesTemplateInput): string[] {
     lines.push(...renderDocComment(entry.doc.docLines, '  '));
     lines.push(`  ${toInterfaceSignature(entry, input.signatureStyle)}`);
     if (entry.doc.optionalSummary) {
-      lines.push(`  // ${entry.doc.optionalSummary.replace(/^\/\//, '').trim()}`);
+      lines.push(`  // ${singleCommentLine(entry.doc.optionalSummary.replace(/^\/\//, '').trim())}`);
     }
     if (index !== input.docs.length - 1) {
       lines.push('');
@@ -133,14 +133,20 @@ function renderHeader(metadata: EmitMetadata): string[] {
     lines.push(`// Transport: ${transport}`);
   }
   lines.push('');
-  return lines;
+  return lines.map(singleCommentLine);
+}
+
+function singleCommentLine(text: string): string {
+  return text.replace(/[\r\n\u2028\u2029]/g, ' ');
 }
 
 function renderDocComment(docLines: string[] | undefined, indent: string): string[] {
   if (!docLines || docLines.length === 0) {
     return [];
   }
-  return docLines.map((line) => `${indent}${line}`);
+  return docLines.map(
+    (line, index) => `${indent}${index === 0 || index === docLines.length - 1 ? line : line.replaceAll('*/', '* /')}`
+  );
 }
 
 const SIGNATURE_PATTERN = /^function\s+([^(]+)\((.*)\)\s*(?::\s*([^;]+))?;?$/;
